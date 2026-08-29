@@ -1,0 +1,4 @@
+## Append samples of your project ##
+resources:
+- datastore_v1alpha1_kvstore.yaml
+# +kubebuilder:scaffold:manifestskustomizesamples

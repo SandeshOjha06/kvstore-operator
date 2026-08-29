@@ -1,0 +1,9 @@
+apiVersion: datastore.core.systems/v1alpha1
+kind: KVStore
+metadata:
+  labels:
+    app.kubernetes.io/name: kvstore-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: kvstore-sample
+spec:
+  # TODO(user): Add fields here
