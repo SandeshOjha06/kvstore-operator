@@ -50,6 +50,11 @@ func (r *KVStoreReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	_ = logf.FromContext(ctx)
 
 	// TODO(user): your logic here
+	var kvstore datastorev1alpha1.KVStore
+if err := r.Get(ctx, req.NamespacedName, &kvstore); err != nil {
+    // If it's not found, the user deleted it. Just return nil.
+    return ctrl.Result{}, client.IgnoreNotFound(err)
+}
 
 	return ctrl.Result{}, nil
 }

@@ -19,6 +19,7 @@ package v1alpha1
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/api/resource"
 )
 
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
@@ -32,8 +33,19 @@ type KVStoreSpec struct {
 	// More info: https://book.kubebuilder.io/reference/markers/crd-validation.html
 
 	// foo is an example field of KVStore. Edit kvstore_types.go to remove/update
-	// +optional
-	Foo *string `json:"foo,omitempty"`
+
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=10
+	Size int32 `json:"size"`
+	
+	// +kubebuilder:validation:Required
+	ContainerImage string `json:"containerImage"`
+
+	// +kubebuilder:validation:Required
+	Storage resource.Quantity `json:"storage"`
+
+
 }
 
 // KVStoreStatus defines the observed state of KVStore.
