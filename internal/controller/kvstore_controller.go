@@ -29,8 +29,8 @@ import (
 
 // KVStoreReconciler reconciles a KVStore object
 type KVStoreReconciler struct {
-	client.Client
-	Scheme *runtime.Scheme
+    client.Client
+    Scheme *runtime.Scheme
 }
 
 // +kubebuilder:rbac:groups=datastore.core.systems,resources=kvstores,verbs=get;list;watch;create;update;patch;delete
@@ -51,10 +51,72 @@ func (r *KVStoreReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 	// TODO(user): your logic here
 	var kvstore datastorev1alpha1.KVStore
-if err := r.Get(ctx, req.NamespacedName, &kvstore); err != nil {
+	if err := r.Get(ctx, req.NamespacedName, &kvstore); err != nil {
     // If it's not found, the user deleted it. Just return nil.
-    return ctrl.Result{}, client.IgnoreNotFound(err)
+    	return ctrl.Result{}, client.IgnoreNotFound(err)
 }
+
+	labels := map[string]string{"app": "kvstore"}
+
+	// build the StatefulSet
+	sts :=&appsv1.StatefulSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: kvstore.Name + "-sts",
+			Namespace: kvstore.Namespace,
+		},
+
+		Spec: appsv1.StatefulSetSpec{
+			Replicas: &kvstore.Spec.Size,
+			Selector: &metav1.LabelSelector{
+				MatchLabels: labels,
+			},
+			Template: corev1.PodTemplateSpec{
+            ObjectMeta: metav1.ObjectMeta{
+                Labels: labels,
+            },
+            Spec: corev1.PodSpec{
+                Containers: []corev1.Container{{
+                    Name:  "kvstore",
+                    Image: kvstore.Spec.ContainerImage,
+                    // Injecting the Size dynamically into the environment variable
+                    Env: []corev1.EnvVar{{
+                        Name:  "CLUSTER_SIZE",
+                        Value: fmt.Sprintf("%d", kvstore.Spec.Size), 
+                    }},
+                    Ports: []corev1.ContainerPort{{
+                        ContainerPort: 6379,
+                        Name:          "kv-port",
+                    }},
+                    // 
+					VolumeMounts: []corev1.VolumeMount{{
+    					Name:      "wal-storage", // Must match the PVC name exactly
+    					MountPath: "/app/data",
+						}},
+                }},
+            },
+        },
+		VolumeClaimTempelats: []corev1.PersistentVolumeClaim{
+			{
+				ObjectMeta: metav1.ObjectMeta{
+
+					Name: "wal-storage",
+				},
+			Spec : PersistentVolumeClaimSpec{
+				AccessModes: []corev1.PersistentVolumeAccessModes{
+					corev1.ReadWriteOnce,
+				},
+				Resources: corev1.VolumeResourceRequirements{
+					Requests: corev1.ResourceList{
+                    // corev1.ResourceStorage is a constant for the string "storage"
+                    corev1.ResourceStorage: kvstore.Spec.Storage,
+                },
+				},
+			},
+		},
+		//
+		},
+	},
+
 
 	return ctrl.Result{}, nil
 }
