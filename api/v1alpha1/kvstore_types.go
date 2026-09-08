@@ -17,9 +17,9 @@ limitations under the License.
 package v1alpha1
 
 import (
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/api/resource"
 )
 
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
@@ -38,14 +38,12 @@ type KVStoreSpec struct {
 	// +kubebuilder:validation:Minimum=1
 	// +kubebuilder:validation:Maximum=10
 	Size int32 `json:"size"`
-	
+
 	// +kubebuilder:validation:Required
 	ContainerImage string `json:"containerImage"`
 
 	// +kubebuilder:validation:Required
 	Storage resource.Quantity `json:"storage"`
-
-
 }
 
 // KVStoreStatus defines the observed state of KVStore.
@@ -59,6 +57,8 @@ type KVStoreStatus struct {
 	// conditions represent the current state of the KVStore resource.
 	// Each condition has a unique type and reflects the status of a specific aspect of the resource.
 	//
+
+	AvailableNodes int32 `json:"availableNodes"`
 	// Standard condition types include:
 	// - "Available": the resource is fully functional
 	// - "Progressing": the resource is being created or updated
@@ -73,7 +73,8 @@ type KVStoreStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
-
+// +kubebuilder:printcolumn:name="Size",type="integer",JSONPath=".spec.size",description="The desired number of nodes"
+// +kubebuilder:printcolumn:name="Available",type="integer",JSONPath=".status.availableNodes",description="The actual number of running nodes"
 // KVStore is the Schema for the kvstores API
 type KVStore struct {
 	metav1.TypeMeta `json:",inline"`

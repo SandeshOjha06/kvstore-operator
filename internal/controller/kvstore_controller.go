@@ -29,6 +29,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil" // For Owner References
+	"sigs.k8s.io/controller-runtime/pkg/log"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	datastorev1alpha1 "github.com/SandeshOjha06/kvstore-operator/api/v1alpha1"
@@ -64,7 +65,8 @@ func (r *KVStoreReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 			Namespace: kvstore.Namespace,
 		},
 		Spec: appsv1.StatefulSetSpec{
-			Replicas: &kvstore.Spec.Size,
+			ServiceName: kvstore.Name + "-network",
+			Replicas:    &kvstore.Spec.Size,
 			Selector: &metav1.LabelSelector{
 				MatchLabels: labels,
 			},
@@ -142,14 +144,86 @@ func (r *KVStoreReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, err
 	}
 
-	// The StatefulSet already exists(nothing for phase 1).
+	// Headless Service Lifecycle
+	// Build the blueprint in memory
+	svc := r.constructService(&kvstore)
+
+	// Check if the Service already exists in the cluster
+	foundSvc := &corev1.Service{}
+	err = r.Get(ctx, types.NamespacedName{Name: svc.Name, Namespace: svc.Namespace}, foundSvc)
+
+	if err != nil && apierrors.IsNotFound(err) {
+		// The Service does not exist. Create it.
+		log.FromContext(ctx).Info("Creating a new Headless Service", "Service.Namespace", svc.Namespace, "Service.Name", svc.Name)
+
+		if err := r.Create(ctx, svc); err != nil {
+			log.FromContext(ctx).Error(err, "Failed to create new Service", "Service.Namespace", svc.Namespace, "Service.Name", svc.Name)
+			return ctrl.Result{}, err
+		}
+
+		// Creation was successful. Requeue the loop.
+		return ctrl.Result{Requeue: true}, nil
+
+	} else if err != nil {
+		log.FromContext(ctx).Error(err, "Failed to get Service")
+		return ctrl.Result{}, err
+	}
+	// Ststus Reconciliation
+
+	//  Read reality: How many pods are actually Ready?
+	actualAvailable := foundSts.Status.ReadyReplicas
+
+	//  Compare reality to our Custom Resource's recorded status
+	if kvstore.Status.AvailableNodes != actualAvailable {
+
+		logf.FromContext(ctx).Info("Updating KVStore status",
+			"OldAvailable", kvstore.Status.AvailableNodes,
+			"NewAvailable", actualAvailable)
+
+		kvstore.Status.AvailableNodes = actualAvailable
+
+		//  Push the updated status back to the Kubernetes API server
+		if err := r.Status().Update(ctx, &kvstore); err != nil {
+			logf.FromContext(ctx).Error(err, "Failed to update KVStore status")
+			return ctrl.Result{}, err
+		}
+	}
+
+	// Everything is successfully provisioned and the status is accurate. Go to sleep.
 	return ctrl.Result{}, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *KVStoreReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
+		Owns(&appsv1.StatefulSet{}).
 		For(&datastorev1alpha1.KVStore{}).
 		Named("kvstore").
 		Complete(r)
+}
+
+// constructService builds the Headless Service required for the StatefulSet DNS
+func (r *KVStoreReconciler) constructService(kvstore *datastorev1alpha1.KVStore) *corev1.Service {
+	labels := map[string]string{"app": "kvstore"}
+
+	svc := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      kvstore.Name + "-network",
+			Namespace: kvstore.Namespace,
+			Labels:    labels,
+		},
+		Spec: corev1.ServiceSpec{
+			ClusterIP: "None", // This makes it Headless
+			Selector:  labels,
+			Ports: []corev1.ServicePort{{
+				Port: 6379,
+				Name: "kv-port",
+			}},
+		},
+	}
+
+	// Set the owner reference
+	_ = controllerutil.SetControllerReference(kvstore, svc, r.Scheme)
+
+	return svc
 }
