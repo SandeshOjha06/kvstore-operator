@@ -144,6 +144,42 @@ func (r *KVStoreReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, err
 	}
 
+	// Drift Detection
+	size := kvstore.Spec.Size
+	if *foundSts.Spec.Replicas != size {
+		logf.FromContext(ctx).Info("StatefulSet size drift detected. Reconciling.",
+			"CurrentReplicas", *foundSts.Spec.Replicas,
+			"DesiredSize", size)
+
+		foundSts.Spec.Replicas = &size
+
+		if err := r.Update(ctx, foundSts); err != nil {
+			logf.FromContext(ctx).Error(err, "Failed to update StatefulSet")
+			return ctrl.Result{}, err
+		}
+
+		// Successfull Update, requeue to let the cluster process scaling
+		return ctrl.Result{Requeue: true}, nil
+	}
+
+	// drift detection(image)
+	desiredImage := kvstore.Spec.ContainerImage
+	actualImage := foundSts.Spec.Template.Spec.Containers[0].Image
+
+	if actualImage != desiredImage {
+		logf.FromContext(ctx).Info("Container image drift detected. Reconciling.",
+			"CurrentImage", actualImage,
+			"DesiredImage", desiredImage)
+
+		foundSts.Spec.Template.Spec.Containers[0].Image = desiredImage
+		if err := r.Update(ctx, foundSts); err != nil {
+			logf.FromContext(ctx).Error(err, "Failed to update StatefulSet image")
+			return ctrl.Result{}, err
+		}
+
+		return ctrl.Result{Requeue: true}, nil
+	}
+
 	// Headless Service Lifecycle
 	// Build the blueprint in memory
 	svc := r.constructService(&kvstore)
